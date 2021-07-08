@@ -1,12 +1,17 @@
 package BillingOps
 
 import java.io.{File, FileNotFoundException, IOException}
-import java.time.{Instant, LocalDate, ZoneId, Period}
+import java.time.{Instant, Period, ZoneId}
+import java.util
+import java.util.UUID
 
-import scala.concurrent.ExecutionContext.Implicits.global
+import BillingOps.QueryUtils.BillingQuerySummary
+import com.farther.grecoevents.FeeEvents.{ExecuteFeeBatch, ExecuteFeeBatchData, ExecuteFeeData}
+import com.farther.grecoevents.{EventSource, InitiatingParty}
 import slick.jdbc.MySQLProfile.api._
 import com.github.tototoshi.csv._
 import com.farther.northstardb._
+import org.apache.kafka.clients.producer.{KafkaProducer, RecordMetadata}
 
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
@@ -39,19 +44,7 @@ object TestQuery extends App {
  * Object containing billing constants such as billing rates
  */
 
-object BillingConstants {
-
-  val MonthlyRateWithAdvisorBps = 0.008 / 12
-  val MonthlyRateNoAdvisorBps = 0.004 / 12
-  val FartherBillingAccountId = "8GU050031X"
-  val minIRAAmountBilledinDollars = 2.0
-  val minNonRetirementAccountBilled = 1.0
-  // retirement accounts are roth and ira
-}
-
 object QueryUtils {
-  import BillingConstants._
-
   // Types
   case class BillingQuerySummary(clientId: Int,
                                  accountID: String,
@@ -66,12 +59,8 @@ object QueryUtils {
                                  currentAccountBalance: Double
                                 )
 
-  // Get the Environment
-  val envType = sys.env("ENV_TYPE")
-
-  val dbConfPath = if (envType == "PROD") "ProdNsMysql" else "UatNsMysql"
   // Configure DB
-  val db = Database.forConfig(dbConfPath)
+  val db = Database.forConfig(DB_CONF_PATH)
   // Get accounts to be billed by user and assign rate / billing amount to clients
 
   /**
@@ -131,7 +120,6 @@ object QueryUtils {
  */
 object CsvUtils {
   import QueryUtils.BillingQuerySummary
-  import BillingConstants._
   import BillingLogic.calcAccountBillingAmount
 
   // Header Row is constant
@@ -149,12 +137,11 @@ object CsvUtils {
   def billingQuerySummaryToTrexRow(bqs: BillingQuerySummary, monthYear: String): List[String] = {
 
     val billingRate = bqs.advisorId match {
-      case Some(_) => MonthlyRateWithAdvisorBps
-      case None => MonthlyRateNoAdvisorBps
+      case Some(_) => MONTHLY_RATE_WITH_ADVISOR_BPS
+      case None => MONTHLY_RATE_NO_ADVISOR_BPS
     }
 
-    val billingAmount = calcAccountBillingAmount(billingRate, bqs.totalEquity,
-      bqs.accountType, bqs.createdOn)
+    val billingAmount = calcAccountBillingAmount(billingRate, bqs.totalEquity, bqs.accountType, bqs.createdOn)
 
     val trexRow = List(
       bqs.clientId.toString,
@@ -166,7 +153,7 @@ object CsvUtils {
       monthYear,
       "IA",
       "FEE",
-      FartherBillingAccountId,
+      FARTHER_BILLING_ACCOUNT_ID,
       "Farther Finance Monthly Management Fee",
       s"Fee for #${bqs.accountID}",
       bqs.clientFirstName,
@@ -183,7 +170,7 @@ object CsvUtils {
    * @param monthYear String - month year for the billing period e.g. Apr-20
    * @return trexRowList List[List[String]] - the list of all billing rows w/ header for writing to the csv
    */
-  def bqsToTrexRowList(b: Seq[BillingQuerySummary], monthYear: String) = {
+  def bqsToTrexRowList(b: Seq[BillingQuerySummary], monthYear: String): List[List[String]] = {
     val bqsRowSeq = b map {bqs => billingQuerySummaryToTrexRow(bqs, monthYear)}
     val bqsRowList = bqsRowSeq.toList
     val trexRowList = TrexHeaderRow :: bqsRowList
@@ -213,7 +200,6 @@ object CsvUtils {
 }
 
 object BillingLogic {
-  import BillingConstants.{minIRAAmountBilledinDollars, minNonRetirementAccountBilled}
   /**
    * Returns (on a per account basis) the amount (in dollars) to bill to the account
    *
@@ -232,22 +218,22 @@ object BillingLogic {
       if (
           (
             (accountType == "ira" || accountType == "roth") &&
-            (unadjustedFee > minIRAAmountBilledinDollars)
+            (unadjustedFee > MIN_IRA_AMOUNT_BILLED_DOLLARS)
           ) ||
-            (unadjustedFee > minNonRetirementAccountBilled)
+            (unadjustedFee > MIN_NON_IRA_AMOUNT_BILLED_DOLLARS)
           ) unadjustedFee
-      else if ((accountType == "ira" || accountType == "roth") && (accountAUM > minIRAAmountBilledinDollars)) minIRAAmountBilledinDollars
+      else if ((accountType == "ira" || accountType == "roth") && (accountAUM > MIN_IRA_AMOUNT_BILLED_DOLLARS)) MIN_IRA_AMOUNT_BILLED_DOLLARS
       // TODO add joint account when the time comes
       else if (
         ((accountType == "emf") || (accountType == "lts") || (accountType == "lpa")) &&
-          (accountAUM > minNonRetirementAccountBilled)) minNonRetirementAccountBilled
+          (accountAUM > MIN_NON_IRA_AMOUNT_BILLED_DOLLARS)) MIN_NON_IRA_AMOUNT_BILLED_DOLLARS
       else 0.0 // unrecognized account type
     }
     else 0.0
   }
 
 
-  private def accountWasCreatedMoreThanOneMonthAgo(createdOnDate: Instant) = {
+  private def accountWasCreatedMoreThanOneMonthAgo(createdOnDate: Instant): Boolean = {
     val nowDate = Instant.now.atZone(ZoneId.of("UTC")).toLocalDate
     val createdOnLocalDate = createdOnDate.atZone(ZoneId.of("UTC")).toLocalDate
     val periodSinceCreation = Period.between(createdOnLocalDate, nowDate)
@@ -255,6 +241,41 @@ object BillingLogic {
     val daysSinceCreation = periodSinceCreation.getDays
 
     if ((monthsSinceCreation >= 1) ||(daysSinceCreation >= 30)) true else false
+  }
+
+
+  def generateFee(bqs: BillingQuerySummary): ExecuteFeeData = {
+    val billingRate = bqs.advisorId match {
+      case Some(_) => MONTHLY_RATE_WITH_ADVISOR_BPS
+      case None => MONTHLY_RATE_NO_ADVISOR_BPS
+    }
+
+    ExecuteFeeData(amount = calcAccountBillingAmount(billingRate, bqs.totalEquity, bqs.accountType, bqs.createdOn),
+                   account = bqs.accountID,
+                   contraAccount = FARTHER_BILLING_ACCOUNT_ID_FORMATTED,
+                   accountSideDescription = List("Monthly Management Fee"),
+                   contraAccountSideDescription = List(s"Fee for #${bqs.accountID}"),
+                   feeType = MANAGEMENT_FEE_TYPE)
+  }
+
+  def generateFeeBatch(bqs: List[BillingQuerySummary]): ExecuteFeeBatch = {
+    val fees = bqs.map(generateFee).filter(_.amount > 0)
+
+    ExecuteFeeBatch(correlationId = UUID.randomUUID().toString,
+                    inServiceOfClientId = -1,
+                    eventData = ExecuteFeeBatchData(fees),
+                    eventSource = EventSource("", ""),
+                    initiatingParty = InitiatingParty("", ""),
+                    timeSent = Instant.now().toString)
+  }
+
+  def generateAndExecuteFeeBatch(bqs: List[BillingQuerySummary], topic: String)
+                                (implicit kafkaProducer: KafkaProducer[String, String],
+                                 producerFuncs: KafkaProducerFuncs): util.concurrent.Future[RecordMetadata] = {
+
+    val executeFeeBatch = generateFeeBatch(bqs)
+
+    KafkaProducerFuncs.publishToKafka(executeFeeBatch, topic)
   }
 
 }

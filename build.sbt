@@ -19,6 +19,9 @@ libraryDependencies += "com.typesafe.slick" %% "slick" % "3.3.2"
 libraryDependencies += "mysql" % "mysql-connector-java" % "8.0.16"
 libraryDependencies += "com.typesafe.slick" %% "slick-hikaricp" % "3.3.2"
 libraryDependencies += "ch.qos.logback"      % "logback-classic" % "1.2.3"
-libraryDependencies += "com.farther" %% "northstardb" % "0.2.1-SNAPSHOT"
 
 libraryDependencies += "com.github.tototoshi" %% "scala-csv" % "1.3.6"
+
+libraryDependencies += "com.farther" %% "northstardb" % "0.2.1-SNAPSHOT"
+libraryDependencies += "com.farther" %% "grecoevents" % "0.9.13-SNAPSHOT"
+libraryDependencies += "com.farther" %% "pubsub" % "0.2-SNAPSHOT"

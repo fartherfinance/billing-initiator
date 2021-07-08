@@ -1,9 +1,10 @@
 import java.time.{LocalDate, ZoneId}
 
-import scala.concurrent.{Await, Future}
+import scala.concurrent.Await
 import scala.concurrent.duration._
 import BillingOps.QueryUtils._
 import BillingOps.CsvUtils._
+import BillingOps.{FARTHER_BILLING_ACCOUNT_ID, MONTHLY_RATE_NO_ADVISOR_BPS, MONTHLY_RATE_WITH_ADVISOR_BPS}
 import org.scalatest.flatspec.AnyFlatSpec
 
 class BillingQueryProcessingSpec extends AnyFlatSpec {
@@ -17,11 +18,9 @@ class BillingQueryProcessingSpec extends AnyFlatSpec {
 }
 
 class TrexBuildingSpec extends AnyFlatSpec {
-  import BillingOps.BillingConstants._
-
   val te = 2856.32
-  val expFeeWAdv = te * MonthlyRateWithAdvisorBps
-  val expFeeWoAdv = te * MonthlyRateNoAdvisorBps
+  val expFeeWAdv = te * MONTHLY_RATE_WITH_ADVISOR_BPS
+  val expFeeWoAdv = te * MONTHLY_RATE_NO_ADVISOR_BPS
   val dateString = "June-20"
   val accountCreatedOn = LocalDate
     .of(2020, 6, 1)
@@ -75,7 +74,7 @@ class TrexBuildingSpec extends AnyFlatSpec {
       dateString,
       "IA",
       "FEE",
-      FartherBillingAccountId,
+      FARTHER_BILLING_ACCOUNT_ID,
       "Farther Finance Monthly Management Fee",
       "Fee for #8GU"
     )
@@ -98,7 +97,7 @@ class TrexBuildingSpec extends AnyFlatSpec {
       dateString,
       "IA",
       "FEE",
-      FartherBillingAccountId,
+      FARTHER_BILLING_ACCOUNT_ID,
       "Farther Finance Monthly Management Fee",
       "Fee for #8GU"
     )
