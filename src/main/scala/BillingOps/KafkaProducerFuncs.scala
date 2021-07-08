@@ -3,7 +3,6 @@ package BillingOps
 import java.util.concurrent.Future
 
 import com.farther.grecoevents.Event
-
 import io.circe.generic.extras.auto._
 import io.circe.syntax._
 import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord, RecordMetadata}
