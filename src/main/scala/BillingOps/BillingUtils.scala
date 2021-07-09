@@ -5,39 +5,20 @@ import java.time.{Instant, Period, ZoneId}
 import java.util
 import java.util.UUID
 
-import BillingOps.QueryUtils.BillingQuerySummary
+import BillingOps.BillingLogic.generateAndExecuteFeeBatch
+import BillingOps.CsvUtils.{bqsToTrexRowList, writeToTrexCsv}
+import BillingOps.QueryUtils.{BillingQuerySummary, getBillingSummaries}
 import com.farther.grecoevents.FeeEvents.{ExecuteFeeBatch, ExecuteFeeBatchData, ExecuteFeeData}
 import com.farther.grecoevents.{EventSource, InitiatingParty}
 import slick.jdbc.MySQLProfile.api._
 import com.github.tototoshi.csv._
 import com.farther.northstardb._
+import com.farther.pubsub.kafka.ConfiguredKafkaProducer
+import com.typesafe.config.ConfigFactory
 import org.apache.kafka.clients.producer.{KafkaProducer, RecordMetadata}
 
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
-
-object TestQuery extends App {
-  // Get the Environment
-  val envType = sys.env("ENV_TYPE")
-
-  val dbConfPath = if (envType == "PROD") "ProdNsMysql" else "UatNsMysql"
-  // Configure DB
-  val db = Database.forConfig(dbConfPath)
-
-  val fis = TableQuery[FartherInvestmentAccountsTable]
-
-  val q1 = fis.take(5).result
-
-  val qFut = db.run(q1)
-
-  val res = Await.result(qFut, 5.seconds)
-
-  println(res)
-
-  val instants = res.map(_.createdOn)
-
-
-}
 
 
 /**
@@ -278,4 +259,48 @@ object BillingLogic {
     KafkaProducerFuncs.publishToKafka(executeFeeBatch, topic)
   }
 
+}
+
+object ExecutionUtils {
+
+  /**
+   * Generates file with each accounts' amount to be billed
+   * @param monthYear should be of format: Mmm-YY (Jun-21)
+   */
+  def generateBillingFile(monthYear: String): Unit = {
+    // Load Billing Configs
+    val billingConf = ConfigFactory
+      .load("application.conf")
+      .getConfig("Billing")
+    val basePath = billingConf.getString("outFileBasePath")
+    println(s"File base path is $basePath")
+
+    // Create the target path
+    val outputFPath = basePath + "/Farther_Billing_File-" + monthYear + ".csv"
+    val bqsFut = getBillingSummaries
+    val bqs = Await.result(bqsFut, 60.seconds)
+
+    val bqsTrexRows = bqsToTrexRowList(bqs, monthYear)
+    println(s"Produced output length is ${bqsTrexRows.length}")
+    println(s"Outputting billing file to $outputFPath")
+    writeToTrexCsv(bqsTrexRows, outputFPath)
+    println("Operation Complete")
+  }
+
+
+  /**
+   * Generates event for initaiting a batch of fees for given month's monthly funding
+   */
+  def executeBilling(): Unit = {
+    implicit val kafkaProducer: KafkaProducer[String, String] = new ConfiguredKafkaProducer().producer
+    implicit val producerFuncs: KafkaProducerFuncs = new KafkaProducerFuncs()
+
+    val bqsFut = getBillingSummaries
+    val bqs = Await.result(bqsFut, 60.seconds).toList
+
+    generateAndExecuteFeeBatch(bqs, KAFKA_TEST_TOPIC)
+    Thread.sleep(5)
+
+    println("Operation Complete")
+  }
 }

@@ -5,6 +5,7 @@ import scala.concurrent.duration._
 import BillingOps.QueryUtils._
 import BillingOps.CsvUtils._
 import BillingOps.{FARTHER_BILLING_ACCOUNT_ID, MONTHLY_RATE_NO_ADVISOR_BPS, MONTHLY_RATE_WITH_ADVISOR_BPS}
+import com.farther.northstardb.FartherInvestmentAccountsTable
 import org.scalatest.flatspec.AnyFlatSpec
 
 class BillingQueryProcessingSpec extends AnyFlatSpec {
@@ -13,7 +14,7 @@ class BillingQueryProcessingSpec extends AnyFlatSpec {
     val bqs = getBillingSummaries
 
     val bqsRes = Await.result(bqs, 5.seconds)
-    assert(!bqsRes.isEmpty)
+    assert(bqsRes.nonEmpty)
   }
 }
 
@@ -135,3 +136,26 @@ class TrexBuildingSpec extends AnyFlatSpec {
 
   }
 }
+
+//object TestQuery {
+//  // Get the Environment
+//  val envType = sys.env("ENV_TYPE")
+//
+//  val dbConfPath = if (envType == "PROD") "ProdNsMysql" else "UatNsMysql"
+//  // Configure DB
+//  val db = Database.forConfig(dbConfPath)
+//
+//  val fis = TableQuery[FartherInvestmentAccountsTable]
+//
+//  val q1 = fis.take(5).result
+//
+//  val qFut = db.run(q1)
+//
+//  val res = Await.result(qFut, 5.seconds)
+//
+//  println(res)
+//
+//  val instants = res.map(_.createdOn)
+//
+//
+//}
