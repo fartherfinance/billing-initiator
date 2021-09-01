@@ -16,7 +16,7 @@ object BillingMain extends App {
     .getConfig("Billing")
   val basePath = billingConf.getString("outFileBasePath")
   println(s"File base path is ${basePath}")
-  val monthYear = "Jun-21"
+  val monthYear = "Aug-21"
 
   // Create the target path
   val outputFpath = basePath + "/Farther_Billing_File-" + monthYear + ".csv"

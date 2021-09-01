@@ -138,7 +138,7 @@ object CsvUtils {
   val TrexHeaderRow = List("ClientId",
     "DrBatchB", "DrEntry", "DrAcct", "Amount", "DrTr1",
     "DrTr2", "CrBatchB", "CrEntry", "CrAcct", "CrTr1", "CrTr2",
-    "FirstName", "LastName", "AcctBalance")
+    "FirstName", "LastName", "AcctBalance", "AdvisorID")
 
   /**
    * Returns a Trex Billing Row (List[String]) ready to write to csv
@@ -171,7 +171,8 @@ object CsvUtils {
       s"Fee for #${bqs.accountID}",
       bqs.clientFirstName,
       bqs.clientLastName,
-      bqs.currentAccountBalance.toString
+      bqs.currentAccountBalance.toString,
+      bqs.advisorId.getOrElse("None").toString
     )
 
     trexRow
