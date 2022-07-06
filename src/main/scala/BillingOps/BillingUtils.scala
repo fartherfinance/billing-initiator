@@ -57,14 +57,13 @@ object QueryUtils {
                                  accountID: String,
                                  totalEquity: Double,
                                  advisorId: Option[Int],
-                                 accountCreated: String,
                                  accountType: String,
                                  accountName: String,
                                  createdOn: Instant,
                                  clientFirstName: String,
                                  clientLastName: String,
                                  currentAccountBalance: Double
-                                )
+                                )U
 
   // Get the Environment
   val envType = sys.env("ENV_TYPE")
@@ -106,7 +105,6 @@ object QueryUtils {
       accountSummary.accountId,
       accountSummary.totalEquity,
       investmentDetails.advisorId,
-      invAccountDetails.accountCreated,
       accountSummary.accountType,
       accountSummary.accountName,
       invAccountDetails.createdOn,
